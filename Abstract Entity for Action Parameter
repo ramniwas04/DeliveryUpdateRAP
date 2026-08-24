@@ -1,0 +1,23 @@
+//*************************************************************************
+// PROGRAM DETAIL
+//   NAME:         ZBP_I_ITD_010_DELIVERY_UPDATE
+//   AUTHOR:       Ram Niwas
+//   WRITTEN:      10/04/2026
+//   TYPE:         RAP - Behavior Pool Class
+//   DESCRIPTION:  Add Delivery Status through API
+//*************************************************************************
+//=========================================================================
+// Date        Developer         Issue            Description
+// ------------------------------------------------------------------------
+//=========================================================================
+
+@EndUserText.label: 'Status Parameter'
+@ObjectModel.usageType.sizeCategory: #S
+@ObjectModel.usageType.dataClass: #MIXED
+@ObjectModel.usageType.serviceQuality: #X
+define abstract entity ZD_ITD_010_StatusParam
+
+{
+    DistrStatusByDecentralizedWrhs : abap.char( 3 );
+    
+}
