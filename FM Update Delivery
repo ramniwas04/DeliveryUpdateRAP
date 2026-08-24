@@ -1,0 +1,102 @@
+FUNCTION zotc_040_delv_dist_status_upd
+  IMPORTING
+    VALUE(it_delivery) TYPE ztto_040_0003
+  EXCEPTIONS
+    no_input_parameter.
+
+
+
+*======================================================================
+* This FM was copied from Rust-Oleum 4/24/2025.
+*======================================================================
+* To update the delivery warehouse status VLSTK following approach is used:
+* 1. Initialize the global data for Program SAPMV50A
+* 2. Read the delivery data into program variables.
+* 3. Finally save the changes.
+* Note: Outputs are redetermined for delivery based on new warehouse status.
+*       Change log captured for new change.
+*======================================================================
+
+
+  DATA lf_final_check     TYPE c LENGTH 1.
+  DATA lf_determine_check TYPE c LENGTH 1.
+  DATA lf_renumber        TYPE c LENGTH 1.
+  DATA lf_post            TYPE c LENGTH 1.
+  DATA lf_subrc           TYPE sysubrc.
+
+
+  IF it_delivery[] IS INITIAL.
+    RAISE no_input_parameter.
+  ENDIF.
+
+  LOOP AT it_delivery ASSIGNING FIELD-SYMBOL(<fs_delivery>).
+    CLEAR : xlikp,
+            xvbuk,
+            yvbuk.
+    REFRESH: xlikp[],xvbuk[], yvbuk[].
+    t180-trvog = '6'.
+    t180-tcode = 'VL02N'.
+    SELECT SINGLE * FROM likp
+      WHERE vbeln = <fs_delivery>-vbeln.
+    IF sy-subrc <> 0.
+      CONTINUE.
+    ENDIF.
+
+*   Initializing to recalculate status
+    PERFORM no_dequeue(sapmv50a) IF FOUND.
+    PERFORM lieferungsupdate_extern_init(sapmv50a) IF FOUND.
+    PERFORM transaktion_init(sapmv50a) IF FOUND USING 'VL02'.
+    PERFORM lieferungsupdate_extern_init(sapmv50a) IF FOUND.
+    PERFORM synchron(sapmv50a) IF FOUND.
+    PERFORM nicht_sperren_y(sapmv50a) IF FOUND.
+    PERFORM aufrufer_transport(sapmv50a) IF FOUND.
+
+    REFRESH cvbfs.
+*   Ensure that messages are written to the log instead to the screen
+    t185f-aktyp = 'H'.
+    t180-trvog = '6'.
+    t180-trtyp = 'V'.
+    likp-vbeln = <fs_delivery>-vbeln.
+
+    PERFORM beleg_lesen(sapmv50a).
+
+    LOOP AT xlikp WHERE vbeln = <fs_delivery>-vbeln.
+      slikp-tabix = sy-tabix.
+      MOVE-CORRESPONDING xlikp TO likp.
+      MOVE-CORRESPONDING xlikp TO likpd.
+      PERFORM likp_bearbeiten_vorbereiten(sapfv50k).
+      likp-vlstk = <fs_delivery>-vlstk.
+      PERFORM likp_bearbeiten(sapfv50k).
+      xlikp-vlstk = <fs_delivery>-vlstk.
+      xlikp-updkz = 'U'.
+      MODIFY xlikp INDEX slikp-tabix.
+    ENDLOOP.
+
+    READ TABLE xvbuk WITH KEY vbeln = likp-vbeln
+         BINARY SEARCH.
+    IF sy-subrc = 0.
+      MOVE-CORRESPONDING xvbuk TO yvbuk.
+      xvbuk-vlstk = likp-vlstk.
+      xvbuk-updkz = 'U'.
+      MODIFY xvbuk INDEX sy-tabix.
+      APPEND yvbuk.
+    ENDIF.
+
+    lf_final_check = space.
+    lf_determine_check = 'X'.
+    lf_renumber = 'X'.
+    lf_post = 'X'.
+    v50agl-no_whouse_det = 'X'.
+
+    likp-vlstk = <fs_delivery>-vlstk.
+    vbuk-vlstk = likp-vlstk.
+    PERFORM beleg_sichern_01(sapmv50a)
+      USING    lf_final_check
+               lf_determine_check
+               lf_renumber
+               lf_post
+      CHANGING lf_subrc.
+
+  ENDLOOP.
+
+ENDFUNCTION.
