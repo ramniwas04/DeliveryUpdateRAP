@@ -1,0 +1,163 @@
+**************************************************************************
+* PROGRAM DETAILS
+*   NAME:         ZBP_I_ITD_010_DELIVERY_UPDATE
+*   AUTHOR:       Ram Niwas
+*   WRITTEN:      10/04/2026
+*   TYPE:         RAP - Behavior Pool Class
+*   DESCRIPTION:  Add Delivery Status through API
+**************************************************************************
+*=========================================================================
+* Date        Developer         Issue            Description
+* ------------------------------------------------------------------------
+*=========================================================================
+
+CLASS lhc_zi_itd_010_delivery_update DEFINITION INHERITING FROM cl_abap_behavior_handler.
+  PRIVATE SECTION.
+    METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION
+      IMPORTING keys REQUEST requested_authorizations FOR zi_itd_010_delivery_update RESULT result.
+
+    METHODS update_status FOR MODIFY
+      IMPORTING keys FOR ACTION zi_itd_010_delivery_update~update_status RESULT result.
+
+ENDCLASS.
+
+CLASS lcl_delivery_buffer DEFINITION.
+  PUBLIC SECTION.
+    CLASS-DATA: st_delivery_to_update TYPE ztto_040_0003,
+                st_delivery_to_delete TYPE STANDARD TABLE OF vbeln_vl.
+ENDCLASS.
+
+
+CLASS lhc_zi_itd_010_delivery_update IMPLEMENTATION.
+  METHOD get_instance_authorizations.
+  ENDMETHOD.
+
+  METHOD update_status.
+    DATA ls_delivery TYPE zso_040_0003.
+
+    LOOP AT keys INTO DATA(ls_key).
+
+      DATA(lv_vbeln)  = ls_key-deliverydocument.
+      DATA(lv_action) = ls_key-%param-distrstatusbydecentralizedwrhs.
+
+      CLEAR ls_delivery.
+      ls_delivery-vbeln = lv_vbeln.
+
+      CASE lv_action.
+        WHEN '003'. "Unlock and Delete
+          ls_delivery-vlstk = space.
+          APPEND lv_vbeln TO lcl_delivery_buffer=>st_delivery_to_delete.
+        WHEN '004'.
+          ls_delivery-vlstk = 'B'.
+        WHEN '005'.
+          ls_delivery-vlstk = space.
+        WHEN OTHERS.
+          APPEND VALUE #(
+             %msg = new_message_with_text(
+                     severity = if_abap_behv_message=>severity-error
+                     text     = 'Enter a valid entry(005, 004, 003)'
+        ) ) TO reported-zi_itd_010_delivery_update.
+
+          APPEND VALUE #(
+              %fail-cause = if_abap_behv=>cause-unspecific
+          ) TO failed-zi_itd_010_delivery_update.
+          CONTINUE.
+      ENDCASE.
+
+      READ ENTITIES OF zi_itd_010_delivery_update IN LOCAL MODE
+        ENTITY zi_itd_010_delivery_update
+          FIELDS ( deliverydocument distrstatusbydecentralizedwrhs )
+          WITH VALUE #( ( %key = ls_key-%key ) )
+        RESULT DATA(lt_existing_delivery).
+
+      IF line_exists( lt_existing_delivery[ 1 ] ).
+        DATA(ls_existing) = lt_existing_delivery[ 1 ].
+
+        IF ls_existing-deliverydocument = ls_delivery-vbeln AND ls_existing-distrstatusbydecentralizedwrhs = ls_delivery-vlstk.
+
+          APPEND VALUE #(
+               %tky   = ls_key-%tky
+               %param = VALUE #( deliverydocument               = ls_existing-deliverydocument
+                                 distrstatusbydecentralizedwrhs = ls_existing-distrstatusbydecentralizedwrhs )
+            ) TO result.
+
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+
+      APPEND ls_delivery TO lcl_delivery_buffer=>st_delivery_to_update.
+
+*      APPEND VALUE #(
+*                     %tky   = ls_key-%tky ) TO result.
+
+      APPEND VALUE #(
+               %tky   = ls_key-%tky
+               %param = VALUE #( deliverydocument               = lv_vbeln
+                                 distrstatusbydecentralizedwrhs = lv_action )
+            ) TO result.
+
+
+    ENDLOOP.
+
+  ENDMETHOD.
+ENDCLASS.
+
+
+CLASS lsc_zi_itd_010_delivery_update DEFINITION INHERITING FROM cl_abap_behavior_saver.
+  PROTECTED SECTION.
+    METHODS save_modified    REDEFINITION.
+
+    METHODS cleanup_finalize REDEFINITION.
+
+ENDCLASS.
+
+
+CLASS lsc_zi_itd_010_delivery_update IMPLEMENTATION.
+  METHOD save_modified.
+
+    IF lcl_delivery_buffer=>st_delivery_to_update IS NOT INITIAL.
+
+      CALL FUNCTION 'ZOTC_040_DELV_DIST_STATUS_UPD'
+        EXPORTING
+          it_delivery        = lcl_delivery_buffer=>st_delivery_to_update
+        EXCEPTIONS
+          no_input_parameter = 1
+          OTHERS             = 2.
+
+      IF sy-subrc <> 0.
+        RAISE SHORTDUMP TYPE cx_sy_no_handler.
+      ENDIF.
+
+      CLEAR lcl_delivery_buffer=>st_delivery_to_update.
+
+    ENDIF.
+
+    IF lcl_delivery_buffer=>st_delivery_to_delete IS NOT INITIAL.
+      DATA: ls_hdr_data    TYPE bapiobdlvhdrchg,
+            ls_hdr_control TYPE bapiobdlvhdrctrlchg,
+            lt_return      TYPE STANDARD TABLE OF bapiret2.
+
+      LOOP AT lcl_delivery_buffer=>st_delivery_to_delete INTO DATA(lv_del_vbeln).
+        CLEAR: ls_hdr_data, ls_hdr_control, lt_return.
+
+        ls_hdr_data-deliv_numb    = lv_del_vbeln.
+        ls_hdr_control-deliv_numb = lv_del_vbeln.
+        ls_hdr_control-dlv_del    = 'X'. " This flag triggers the deletion execution
+
+        CALL FUNCTION 'BAPI_OUTB_DELIVERY_CHANGE'
+          EXPORTING
+            header_data    = ls_hdr_data
+            header_control = ls_hdr_control
+            delivery       = lv_del_vbeln
+          TABLES
+            return         = lt_return.
+      ENDLOOP.
+
+      CLEAR lcl_delivery_buffer=>st_delivery_to_delete.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD cleanup_finalize.
+    CLEAR lcl_delivery_buffer=>st_delivery_to_update.
+  ENDMETHOD.
+ENDCLASS.
