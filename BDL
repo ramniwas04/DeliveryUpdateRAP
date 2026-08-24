@@ -1,0 +1,27 @@
+//*************************************************************************
+// PROGRAM DETAILS
+//   NAME:         ZBP_I_ITD_010_DELIVERY_UPDATE
+//   AUTHOR:       Ram Niwas
+//   WRITTEN:      10/04/2026
+//   TYPE:         RAP - Behavior Defination
+//   DESCRIPTION:  Add Delivery Status through API
+//*************************************************************************
+//=========================================================================
+// Date        Developer         Issue            Description
+// ------------------------------------------------------------------------
+//=========================================================================
+
+managed with unmanaged save implementation in class zbp_i_itd_010_delivery_update unique;
+strict ( 2 );
+
+define behavior for ZI_ITD_010_delivery_update //alias <alias_name>
+lock master
+authorization master ( instance )
+//etag master <field_name>
+{
+  field ( readonly ) DeliveryDocument;
+
+
+  action update_status parameter ZD_ITD_010_StatusParam result [1] $self;
+
+}
