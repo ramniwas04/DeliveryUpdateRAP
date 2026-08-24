@@ -7,8 +7,6 @@ FUNCTION zotc_040_delv_dist_status_upd
 
 
 *======================================================================
-* This FM was copied from Rust-Oleum 4/24/2025.
-*======================================================================
 * To update the delivery warehouse status VLSTK following approach is used:
 * 1. Initialize the global data for Program SAPMV50A
 * 2. Read the delivery data into program variables.
